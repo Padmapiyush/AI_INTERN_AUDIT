@@ -19,9 +19,9 @@ The preemption counter sits at **step 2** — it's the direct causal link betwee
 
 | Batch size (4096-tok seqs) | Expected `preempted_seqs` | Rationale |
 |---------------------------|--------------------------|-----------|
-| ≤ 24 | **0** | Fits within ~27-seq KV cache capacity |
-| 27–28 | 0 or small | Near the boundary |
-| 32 | **7+** | Exceeds capacity by ~5 sequences |
-| 48 | **23+** | Exceeds capacity by ~21 sequences |
+| ≤ 24 | **0** | Fits within ~25-seq KV cache capacity |
+| 25–26 | 0 or small | Near the boundary |
+| 32 | **7+** | Exceeds capacity by ~6-7 sequences |
+| 48 | **23+** | Exceeds capacity by ~22-23 sequences |
 
-If we set `max_num_seqs ≤ 27` as proposed in B2, this counter should remain at **0** for all batch sizes, confirming the fix eliminates the mechanism entirely.
+If we set `max_num_seqs ≤ 25` as proposed in B2, this counter should remain at **0** for all batch sizes, confirming the fix eliminates the mechanism entirely.

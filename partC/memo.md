@@ -1,89 +1,35 @@
 # Part C — Decision Memo: Making Indic Assistant Replies Conversational
 
-## Recommendation: Path (a) — SFT on Synthetic "Casualized" Response Pairs
+## Recommendation
 
----
+Choose **path (a): LoRA SFT on synthetic formal→casual response pairs**, with prompt-only as the fallback. This is a style/register problem more than a knowledge problem, so baking the style into the main model is better than serving a second rewriter or maintaining six fragile prompts.
 
 ## Assumptions
 
-1. **Style ≠ knowledge.** Casualizing text is a surface-level style transfer task, not a factual accuracy problem. The base model already "knows" the right answers; it just outputs them in formal/textbook register.
-2. **Synthetic data quality is sufficient for style.** Unlike factual QA where hallucination is catastrophic, style transfer training data can be noisy — a slightly imperfect casual rewrite still teaches the model the right register.
-3. **Cross-lingual style transfer partially generalizes.** Training on Hindi/Kannada casual pairs will transfer some stylistic signal to Tamil, Telugu, Bengali, and Marathi due to shared model representations, though quality will be lower for languages without reviewer coverage.
-4. **LoRA fine-tuning is practical at 4B scale on A100-80GB.** A 4B-parameter model with LoRA (rank 16-64) can be fine-tuned in a few hours on a single A100.
+- The base model already answers reasonably; the failure is that replies sound too formal/textbook.
+- Synthetic rewrites are acceptable for style learning if Hindi/Kannada reviewer checks prevent obvious unnatural data.
+- Reviewer coverage is only Hindi/Kannada, so other Indic languages need automated checks plus small spot checks if possible.
 
----
+## Back-of-envelope arithmetic
 
-## Back-of-Envelope Arithmetic
+- **Data:** Generate 2,000 pairs/language × 6 languages = **12,000 pairs**. At ~200 tokens/pair, that is **2.4M training tokens**.
+- **Reviewer budget:** 10 h/week × 3 weeks = **30 h**. At ~100 binary reviews/hour, reviewer capacity is **3,000 judgments**. Use 600 for synthetic-data quality gate, 1,200 for held-out Hindi/Kannada evals across iterations, and keep 1,200 for edge cases/regression checks.
+- **Training:** 2.4M tokens / 4096 ≈ **586 packed sequences/epoch**. A 4B model with LoRA rank 32 on one A100-80GB should finish several epochs comfortably within the 2-week GPU window, leaving time for one or two data/model iterations.
+- **Serving cost:** SFT adds no second model at inference. A ≤1B rewriter would add latency, infrastructure, and another source of errors after every main-model response.
 
-### Data Generation
-- **Target:** 5,000 formal→casual parallel pairs per language × 6 languages = 30,000 pairs
-- **Method:** Self-distillation — prompt the base model with few-shot examples of formal→casual rewrites, generate candidates, filter by reviewer (Hindi/Kannada only)
-- **Token budget:** ~200 tokens/pair average × 30,000 pairs = 6M tokens of training data
-- **Generation time:** At ~200 tok/s decode on the A100, generating 6M tokens ≈ 8.3 hours. With prompt overhead and batching, estimate ~1-2 days.
+## Success metric with numeric threshold
 
-### Training
-- **LoRA config:** rank=32, alpha=64, targeting attention layers → ~26M trainable parameters (0.6% of 4.2B)
-- **Training time:** 6M tokens / 4096 seq_len ≈ 1,465 samples. At ~3 samples/sec on A100-80GB with batch size 4 and gradient accumulation, ~8 minutes per epoch. Plan for 3-5 epochs = ~30-40 minutes of training.
-- **Total compute:** Well within the 2-week A100 window (< 3 days including all iterations)
+On a held-out set of 200 Hindi and 200 Kannada prompts, require **≥70%** of responses to be rated natural/conversational by the reviewer, with **≤2% absolute regression** on a small factuality/safety checklist. For languages without reviewer coverage, use a formality classifier as a weak proxy and inspect examples manually before launch.
 
-### Reviewer Throughput
-- **Available:** 1 reviewer, Hindi + Kannada only, 10 h/week, 3 weeks = 30 hours
-- **Throughput:** ~100 response evaluations/hour (binary: casual/not-casual) = 3,000 evaluations total
-- **Allocation:** 
-  - Week 1: Evaluate 500 synthetic training pairs (quality gate for data generation)
-  - Week 2: Evaluate 500 model outputs (post-SFT quality check)
-  - Week 3: Evaluate 500 final outputs + regression check on formal/factual quality
-  - Reserve: 1,500 evaluations for iteration and edge cases
+## Kill criterion
 
----
+By **end of Day 7**, if Hindi has not reached **50% conversational** on 200 reviewed outputs after one SFT iteration, stop investing in SFT and pivot to path (c), prompt-engineering. If the highest-resource reviewed language does not move quickly, the synthetic-data pipeline is probably not teaching the intended register.
 
-## Success Metric with Numeric Threshold
+## First experiment on Day 1
 
-**Primary metric:** ≥ **70%** of reviewer-evaluated model responses rated as "natural/conversational" (on a binary scale) for Hindi and Kannada, on a held-out test set of 200 prompts per language.
+Write 10 reviewer-approved Hindi formal→casual examples, prompt the base model to rewrite 100 formal Hindi responses, and have the reviewer rate them. If **≥40%** are acceptable, proceed with synthetic data generation; if **<20%**, redesign the data source/prompt before training.
 
-**Baseline (expected pre-SFT):** < 30% rated conversational (based on the problem statement that outputs are "too formal/textbook").
+## Why not the other paths
 
-**Secondary metrics (automated, for languages without reviewer):**
-- Formality classifier score (train a simple classifier on the synthetic pairs) < 0.3 on a 0-1 formality scale for Tamil, Telugu, Bengali, Marathi
-- No regression on factual accuracy: score on a translated subset of a QA benchmark should not drop > 2%
-
----
-
-## Kill Criterion
-
-**If after 1 week of SFT iteration** (i.e., by end of Week 1), the reviewer rating for Hindi has not crossed **50%** on a sample of 200 outputs:
-
-→ **Abandon SFT (path a) and pivot to prompt-engineering (path c).**
-
-**Rationale:** If 5 days of data generation + training + 1 iteration cycle can't get Hindi (the highest-resource language with direct reviewer coverage) above 50%, then either the synthetic data pipeline is broken or the task requires more nuance than LoRA fine-tuning can capture. Prompt-engineering is the fastest fallback and can still ship by Week 3.
-
-**By when:** Decision point is **end of Day 7** (Friday of Week 1).
-
----
-
-## First Experiment — Day 1
-
-**Goal:** Validate that the base model can produce acceptable casual rewrites when prompted, before investing in the full SFT pipeline.
-
-**Protocol:**
-1. Manually write 10 formal→casual Hindi example pairs (with the reviewer's input on what "casual" means for Hindi)
-2. Use these as few-shot examples in a prompt to the base model
-3. Feed 100 formal Hindi responses from the model and collect casual rewrites
-4. Have the reviewer evaluate all 100 rewrites (takes ~1 hour)
-5. Measure: what % are rated "natural/casual"?
-
-**Expected outcome:** If few-shot self-distillation produces ≥ 40% acceptable casual outputs, the data generation pipeline is viable and we proceed to full-scale pair generation. If < 20%, we need to reconsider whether the base model's register range is sufficient for self-distillation (may need external casual text as seed).
-
----
-
-## Why Not Paths (b) or (c)
-
-| | Path (a) SFT | Path (b) Rewriter ≤1B | Path (c) Prompt-only |
-|---|---|---|---|
-| **Inference cost** | None (style baked in) | +50-100ms latency per request, 2nd model serving cost | Uses context window (~200 tokens of instruction) |
-| **Quality ceiling** | High — model learns register natively | Low — 1B model is undertrained for 6 languages | Medium — fragile, hard to maintain across languages |
-| **Effort to ship** | ~1 week data + train | ~2 weeks (architecture, training, serving infra) | ~2-3 days per language × 6 = ~2 weeks |
-| **Scalability** | Survives model updates (LoRA adapters can be retrained) | Must maintain and serve a second model | Must maintain 6+ language-specific prompts |
-| **Risk** | Reviewer bottleneck (only Hindi+Kannada) | Undertrained 1B model for 6 Indic scripts | Style drift, prompt injection vulnerability |
-
-Path (b) is the worst fit: serving a second model adds infrastructure complexity and latency, and a ≤1B model cannot handle 6 typologically diverse languages well. Path (c) is the fallback if (a) fails.
+- **Path (b), ≤1B rewriter:** adds serving cost and latency, and a small model is likely weak across six Indic languages.
+- **Path (c), prompt-only:** fastest fallback, but consumes context, is injection-prone, and is harder to keep consistent across languages.

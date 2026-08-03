@@ -46,7 +46,7 @@ So `reported_tok_s` is ~8× higher than actual decode goodput because it include
 itl_ms_p50 = 96.07 ms  (batch-24 row)
 
 Per-request decode time ≈ 512 tokens × 96.07 ms = 49,188 ms ≈ 49.2 s
-With 24 concurrent requests: 
+With 24 concurrent requests:
   decode throughput ≈ (24 × 512) / 49.2 ≈ 249.8 tok/s
 ```
 

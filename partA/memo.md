@@ -2,19 +2,19 @@
 
 ## 1. Corrected Headline Numbers
 
-The original report stated that Hindi tokenization was 5.89× worse than English based on `tok/word`, implying a 6× serving cost. 
+The original report stated that Hindi tokenization was 5.89× worse than English based on `tok/word`, implying a 6× serving cost.
 
-Our corrected analysis, using a parallel corpus and the proper metric (`tok/parallel_sentence`), shows the true cost multiplier is lower:
+Our corrected analysis, using a parallel corpus and the proper metric (`tok/parallel_sentence`), shows that the answer depends heavily on tokenizer choice:
 
 - **Original `gpt2` tokenizer:** Hindi is **7.42×** more expensive than English to serve equivalent meaning (198.3 vs 26.7 tok/sentence).
 - **Multilingual `xlm-roberta-base` tokenizer:** Hindi is only **1.25×** more expensive than English (37.8 vs 30.3 tok/sentence). Kannada and Tamil are similarly efficient at **1.35×**.
 
 ## 2. Routing Recommendation
 
-**Do not route Indic traffic to a separate model.** 
-Instead, we should standardize on a modern multilingual tokenizer (like the one used in `xlm-roberta-base` or newer equivalent models like Gemma/Llama-3). 
+**Do not route Indic traffic to a separate model.**
+Instead, we should standardize on a model/tokenizer stack with strong multilingual coverage. `xlm-roberta-base` is used here as a tokenizer benchmark, not as the recommended generative model.
 
-The original report's recommendation of a 6× budget was based on a broken metric (`tok/word`) and an English-centric tokenizer (`gpt2`). When measured properly using a multilingual tokenizer and a constant-meaning denominator, the cost gap collapses from 600% to just 25%. A 25% throughput penalty for Indic traffic is small enough that the operational overhead of maintaining, deploying, and routing to a completely separate Indic-specific model outweighs the compute savings. Serve all languages from a unified multilingual model.
+The original report's recommendation of a 6× budget was based on a broken metric (`tok/word`) and an English-centric tokenizer (`gpt2`). When measured properly using a multilingual tokenizer and a constant-meaning denominator, the Hindi cost gap is about 25% over English rather than a blanket 6× serving penalty. A 25% throughput penalty for Indic traffic is small enough that the operational overhead of maintaining, deploying, and routing to a completely separate Indic-specific model outweighs the compute savings. Serve all languages from a unified multilingual model.
 
 ## 3. The Biggest Caveat
 
