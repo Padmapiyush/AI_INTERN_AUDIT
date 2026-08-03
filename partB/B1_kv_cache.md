@@ -1,6 +1,6 @@
 # B1 — KV-Cache Capacity Calculation (7 pts)
 
-## Given (from model_spec.md)
+## Given (from `model_spec.md`)
 
 | Property | Value |
 |----------|-------|
@@ -12,7 +12,7 @@
 | head_dim | 128 |
 | Weights precision | fp16 (2 bytes) |
 | KV cache precision | fp16 (2 bytes) |
-| GPU | 1× NVIDIA L4 (24 GB) |
+| GPU | 1× NVIDIA L4, 24 GB |
 | `gpu_memory_utilization` | 0.92 |
 | Non-KV overhead | ~1.6 GB |
 | `max_model_len` | 4096 |
@@ -21,79 +21,59 @@
 
 ## (a) KV-cache bytes per token — exact
 
-Every token stored in the KV cache requires K and V projections, across all layers, for each KV head:
+Every stored token needs both K and V vectors for every layer and KV head:
 
-```
+```text
 bytes_per_token = 2 (K and V)
-               × n_kv_heads (8)
-               × head_dim (128)
-               × n_layers (28)
-               × bytes_per_element (2, for fp16)
+                × 8 (KV heads)
+                × 128 (head_dim)
+                × 28 (layers)
+                × 2 (fp16 bytes)
+                = 114,688 bytes/token
+                = 112 KiB/token
 ```
-
-```
-bytes_per_token = 2 × 8 × 128 × 28 × 2
-               = 2 × 8 = 16
-               × 128 = 2,048
-               × 28 = 57,344
-               × 2 = 114,688 bytes per token
-```
-
-**= 114,688 bytes/token = 112 KiB/token**
 
 ---
 
-## (b) Maximum concurrent 4096-token sequences
+## (b) Approximate maximum concurrent 4096-token sequences
 
-**Step 1: Usable GPU memory**
-```
-Total GPU memory:      24.00 GB
-gpu_memory_utilization: × 0.92
-Usable memory:         24.0 × 0.92 = 22.08 GB
-```
+Use decimal GB consistently, because the spec gives 24 GB and 4.2B parameters in decimal units:
 
-**Step 2: Memory consumed by model weights**
-```
-Model parameters:  4.2 B
-Precision:        fp16 (2 bytes)
-Weight memory:    4.2 × 10⁹ × 2 = 8.4 × 10⁹ bytes = 8.4 GB
+```text
+Usable GPU memory = 24.0 GB × 0.92 = 22.08 GB
+Model weights     = 4.2B params × 2 bytes = 8.40 GB
+Non-KV overhead   = 1.60 GB
+Available for KV  = 22.08 - 8.40 - 1.60 = 12.08 GB
 ```
 
-**Step 3: Available for KV cache**
-```
-Available = Usable − Weights − Non-KV overhead
-         = 22.08 − 8.4 − 1.6
-         = 12.08 GB
-         = 12,965,814,272 bytes (12.08 × 1024³)
+Per 4096-token sequence:
+
+```text
+KV per sequence = 114,688 bytes/token × 4096 tokens
+                = 469,762,048 bytes
+                ≈ 0.470 GB
 ```
 
-**Step 4: Memory per full 4096-token sequence**
-```
-Per sequence = 114,688 bytes/token × 4,096 tokens
-             = 469,762,048 bytes
-             ≈ 0.4375 GB
+Maximum full-length sequences:
+
+```text
+12.08 GB / 0.469762048 GB = 25.72
+floor(25.72) = 25 full 4096-token sequences
 ```
 
-**Step 5: Maximum concurrent sequences**
-```
-Max sequences = 12.08 GB / 0.4375 GB
-              = 27.61
-              → floor = 27 sequences
-```
-
-**≈ 27 concurrent 4096-token sequences**
+**Prediction from the model spec alone: about 25 full 4096-token sequences (roughly 26 at the boundary).**
 
 ---
 
-## Verification against bench_log.csv
+## Check against `bench_log.csv`
 
-The log confirms this calculation:
-
-| batch | prompt_len | gen_len | total_tokens | kv_cache_util | preempted |
-|-------|-----------|---------|--------------|---------------|-----------|
+| batch | prompt_len | gen_len | total_tokens/seq | kv_cache_util | preempted_seqs |
+|-------|------------|---------|------------------|---------------|----------------|
 | 24 | 3584 | 512 | 4096 | 0.93 | 0 |
 | 32 | 3584 | 512 | 4096 | 0.97 | 7 |
 
-- At batch 24 with 4096 total tokens per sequence: `kv_cache_util = 0.93` — comfortably fits, consistent with 24/27 ≈ 0.89 utilization (the slightly higher 0.93 likely reflects block-level rounding in the KV cache allocator).
-- At batch 32: preemptions begin (7 sequences evicted), confirming that 32 > 27 exceeds capacity.
-- The transition from 0 to 7 preempted sequences between batch 24 and 32 precisely brackets our calculated limit of ~27.
+This matches the prediction closely:
+
+- Batch 24 fits without preemption and uses 93% KV cache. `24 / 25.72 = 93.3%`, almost exactly the logged `kv_cache_util=0.93`.
+- Batch 32 has `preempted_seqs=7`, implying about `32 - 7 = 25` active full-length sequences can remain resident at once.
+- Therefore the log validates the spec-derived capacity: **the practical safe limit is 24, and the hard full-length capacity is about 25 sequences.**

@@ -1,0 +1,5 @@
+tiktoken>=0.7.0
+transformers>=4.40.0
+sentencepiece>=0.2.0
+regex>=2024.5.15
+datasets==2.19.1

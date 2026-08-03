@@ -19,10 +19,10 @@ Throughput peaks at batch 24 (1,607 tok/s) then **drops 19%** to 1,298 tok/s at 
 
 ## Mechanism — KV Cache Saturation and Preemption
 
-**Root cause: the KV cache cannot hold more than ~27 concurrent 4096-token sequences** (see B1 derivation: 12.08 GB available / 0.4375 GB per sequence = 27.6).
+**Root cause: the KV cache cannot hold more than ~25 concurrent 4096-token sequences** (see B1 derivation: 12.08 GB available / 0.470 GB per sequence = 25.7).
 
 **What happens at batch 32+:**
-1. The scheduler accepts 32 requests but can only fit ~27 in the KV cache simultaneously.
+1. The scheduler accepts 32 requests but can only fit ~25 in the KV cache simultaneously.
 2. To make progress on all requests, the scheduler must **preempt** (evict) some sequences' KV cache — the `preempted_seqs` column confirms this: 7 at batch-32, 23 at batch-48.
 3. When a preempted sequence is rescheduled, its KV cache must be **recomputed from scratch** (re-running prefill for all prior tokens). For prompt_len=3584, this is expensive.
 4. The recomputation wastes GPU cycles that could have been spent on decode, causing *net throughput to drop*.
@@ -48,7 +48,7 @@ This assumes throughput is proportional to batch size: `1607 × (48/24) = 3214`.
 
 ## Proposed Config/Deployment Change
 
-**Change:** Cap the maximum concurrent long-context requests at 24 (or set the scheduler's `max_num_seqs` parameter to ≤ 27 for 4096-token requests).
+**Change:** Cap the maximum concurrent long-context requests at 24 (or set the scheduler's `max_num_seqs` parameter to ≤ 25 for 4096-token requests).
 
 **Predicted quantitative effect:**
 - Eliminates all preemptions → `preempted_seqs` drops to 0

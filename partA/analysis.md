@@ -1,7 +1,7 @@
 # Part A3 — Corrected Analysis (12 pts)
 
 ## Setup
-Using the FLORES-200 devtest corpus (1012 parallel sentences per language), we computed tokenizer statistics for four languages: English, Hindi, Kannada, and Tamil. 
+Using the FLORES-200 devtest corpus (1012 parallel sentences per language), we computed tokenizer statistics for four languages: English, Hindi, Kannada, and Tamil.
 
 We compared the original `gpt2` (tiktoken) tokenizer against `hf:xlm-roberta-base`, a multilingual tokenizer. For both, we computed four denominators:
 - `tok/word` (whitespace separated)
@@ -9,8 +9,6 @@ We compared the original `gpt2` (tiktoken) tokenizer against `hf:xlm-roberta-bas
 - `tok/byte` (UTF-8 encoded size)
 - `tok/grapheme` (User-perceived characters)
 - `tok/sentence` (Tokens per parallel sentence)
-
-## Results
 
 ## Results
 

@@ -15,7 +15,7 @@ To fix this, we assembled a proper multilingual eval set using **FLORES-200** (`
   - `hin` — Hindi (Deva script)
   - `kan` — Kannada (Knda script, Dravidian family)
   - `tam` — Tamil (Taml script, Dravidian family)
-- **Preprocessing:** 
+- **Preprocessing:**
   - Standard NFC Unicode normalization is applied on load (built into `fertility_corrected.py`)
   - No case-folding or destructive normalization was performed prior to tokenization.
 
